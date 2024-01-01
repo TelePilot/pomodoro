@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/bubbles/timer"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/gen2brain/beeep"
 )
 
 var (
@@ -141,9 +142,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.percent = m.timer.Timeout.Seconds() / m.currentTime.Seconds()
 		return m, cmd
 	case timer.TimeoutMsg:
+		message := "Time to focus!"
+		if m.currentTask == "Focus Time" {
+			message = "Time for a break"
+		}
+		err := beeep.Alert(fmt.Sprintf("%s over", m.currentTask), message, "assets/goph.jpg")
+		if err != nil {
+			panic(err)
+		}
 		m.keymap.start.SetEnabled(true)
 		m.keymap.skip.SetEnabled(false)
 	case timer.StartStopMsg:
+
 		var cmd tea.Cmd
 		m.timer, cmd = m.timer.Update(msg)
 		m.keymap.stop.SetEnabled(m.timer.Running() && !m.settingsActive)
@@ -151,6 +161,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.keymap.start.SetEnabled(m.timer.Timedout() && !m.settingsActive)
 		m.keymap.skip.SetEnabled(!m.timer.Timedout() && !m.settingsActive)
 		m.keymap.reset.SetEnabled(!m.settingsActive)
+
 		return m, cmd
 		// Set focus to next input
 
