@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -44,6 +43,7 @@ type model struct {
 	settingsActive bool
 	inputs         []textinput.Model
 	focusIndex     int
+	longBreakIndex int
 	warningMessage string
 }
 
@@ -64,6 +64,7 @@ const (
 )
 
 func main() {
+
 	m := initModel()
 	m.keymap.resume.SetEnabled(false)
 	m.keymap.skip.SetEnabled(false)
@@ -80,7 +81,7 @@ func (m model) Init() tea.Cmd {
 	return m.timer.Stop()
 }
 func (m *model) settingsModel() {
-	m.inputs = make([]textinput.Model, 3)
+	m.inputs = make([]textinput.Model, 4)
 	var t textinput.Model
 	for i := range m.inputs {
 		t = textinput.New()
@@ -100,6 +101,9 @@ func (m *model) settingsModel() {
 		case 2:
 			t.Placeholder = fmt.Sprint(m.longBreak)
 			t.Prompt = "Long Break Time > "
+		case 3:
+			t.Placeholder = fmt.Sprint(m.longBreakIndex)
+			t.Prompt = "Long break index > "
 		}
 
 		m.inputs[i] = t
@@ -153,7 +157,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.keymap.start.SetEnabled(true)
 		m.keymap.skip.SetEnabled(false)
 	case timer.StartStopMsg:
-
 		var cmd tea.Cmd
 		m.timer, cmd = m.timer.Update(msg)
 		m.keymap.stop.SetEnabled(m.timer.Running() && !m.settingsActive)
@@ -180,8 +183,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.currentTask = "Focus Time"
 				} else {
 					m.focusCounter += 1
-					if m.focusCounter%3 == 0 {
-
+					if m.focusCounter%m.longBreakIndex == 0 {
 						m.timer = timer.NewWithInterval(time.Minute*time.Duration(m.longBreak), time.Second)
 						m.currentTask = "Long Break Time"
 
@@ -228,7 +230,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 								m.warningMessage = "input must be a number"
 							} else {
 								m.warningMessage = ""
-								log.Print(n, "num", m.currentTask)
 								if n != 0 {
 									switch i {
 									case 0:
@@ -246,15 +247,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 											newCurrent = n
 										}
 										m.longBreak = n
+									case 3:
+										m.longBreakIndex = n
 									}
 								}
 							}
 						}
 						if errorCount == 0 {
 							m.focusIndex = 0
-							m.currentTime = time.Minute * time.Duration(newCurrent)
-							m.timer.Timeout = m.currentTime
-							return m.Resume()
+							if newCurrent != 0 {
+								m.currentTime = time.Minute * time.Duration(newCurrent)
+								m.timer.Timeout = m.currentTime
+							}
+							if m.currentTask == "No task" {
+								m.keymap.saveSettings.SetEnabled(false)
+								m.keymap.cancel.SetEnabled(false)
+								m.keymap.settings.SetEnabled(true)
+								m.settingsActive = false
+								return m, m.timer.Stop()
+							} else {
+								return m.Resume()
+							}
+
 						}
 
 					}
@@ -334,11 +348,8 @@ func (m model) View() string {
 	if m.active && !m.timer.Timedout() {
 		s += m.progress.ViewAs(m.percent) + " " + m.timer.View() + "\n"
 	}
-	s += strings.Repeat("•", m.focusCounter)
 	if m.settingsActive {
 		var b strings.Builder
-
-		s = "Change Settings\n\n"
 		for i := range m.inputs {
 			b.WriteString(m.inputs[i].View())
 			if i < len(m.inputs)-1 {
@@ -350,8 +361,10 @@ func (m model) View() string {
 			button = &focusedButton
 		}
 		fmt.Fprintf(&b, "\n\n%s\n\n", *button)
-		s += b.String()
+		s = "Change Settings\n\n" + b.String()
 	}
+	s += strings.Repeat("•", m.focusCounter)
+
 	if len(m.warningMessage) != 0 {
 		s += "Warning: " + m.warningMessage
 	}
@@ -361,11 +374,12 @@ func (m model) View() string {
 func initModel() model {
 
 	return model{
-		breakTime:   5,
-		focusTime:   25,
-		longBreak:   15,
-		percent:     1.0,
-		currentTask: "Focus Time",
+		breakTime:      5,
+		focusTime:      25,
+		longBreak:      15,
+		percent:        1.0,
+		longBreakIndex: 3,
+		currentTask:    "No task",
 		keymap: keymap{
 			start: key.NewBinding(
 				key.WithKeys("enter"),
